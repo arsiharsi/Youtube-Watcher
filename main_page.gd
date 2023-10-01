@@ -14,6 +14,10 @@ onready var oauth_url = $fg/right/oauth
 onready var auth_token_timer = $misc/auth_token_timer
 onready var videos_array_textbox = $fg/right/videos_array
 onready var video_timer = $misc/video_timer
+onready var token_http_request_node = $http/tokenHttp
+onready var token_console = $fg/left/token_console
+onready var token_code = $fg/left/code
+onready var token_code_label = $fg/left/code_label
 var videos_array = []
 var valid_auth = false
 var check_video_url = "http://hsm.ugatu.su/yt/wtload.php?videoId="
@@ -37,7 +41,7 @@ func _ready():
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):
-	
+	token_work()
 	auth_token = auth_textbox.text
 	if auth_token_timer.time_left != 0:
 		auth_token_label.text = "AUTH TOKEN | WAIT TIME: "+str(int(auth_token_timer.time_left))
@@ -177,13 +181,15 @@ func _on_check_video_pressed():
 
 
 func _on_auth_token_text_changed():
-	auth_token_timer.start(3600)
+	auth_token_timer.start(3590)
 	valid_auth = true
 	auth_token_label.self_modulate = Color.green
 	pass # Replace with function body.
 
 
 func _on_auth_token_timer_timeout():
+	post_acces_token(refresh_token)
+	token_state = "getting acces token"
 	valid_auth = false
 	auth_token_label.self_modulate = Color.red
 	pass # Replace with function body.
@@ -228,3 +234,67 @@ func durationToSeconds(duration:String):
 		edited_string.replace("S","")
 		seconds += int(edited_string)
 	return seconds
+
+var saved_token_json
+var is_token_json = true
+var is_token_ready = true
+var refresh_token
+var token_state = "no token"
+
+var CLIENT_ID = "389579844116-tr7g8o4hjvm39h6ar7u228f8a6f4ntug.apps.googleusercontent.com"
+var CLIENT_SECRET = "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"
+func _on_tokenHttp_request_completed(result, response_code, headers, body):
+	print(result)
+	print(response_code)
+	if is_token_json:
+		var json_parsed = JSON.parse(body.get_string_from_utf8())
+		var json_result = json_parsed.result
+		saved_token_json = json_result
+		print("JSON result: " + str(json_result)+ "END OF JSON RESULT")
+	token_console.text = body.get_string_from_utf8()
+	if token_state == "getting refresh token":
+		token_state = "got refresh token"
+	if token_state == "getting acces token":
+		token_state = "got acces token"
+	is_token_ready = true
+	pass # Replace with function body.
+
+#"Content-Length: 40"
+func post_refresh_token(code):
+	is_token_json = true
+	token_http_request_node.request("https://oauth2.googleapis.com/token?code="+str(code)+"&client_id="+str(CLIENT_ID)+"&client_secret="+str(CLIENT_SECRET)+"&redirect_uri=http://localhost&grant_type=authorization_code", ["Content-Length: 0"],true,HTTPClient.METHOD_POST)
+	is_token_ready = false
+	pass
+
+func getRefreshToken(in_json):
+	return in_json["refresh_token"]
+
+
+func post_acces_token(in_refresh_token):
+	is_token_json = true
+	token_http_request_node.request("https://oauth2.googleapis.com/token?client_id="+str(CLIENT_ID)+"&client_secret="+str(CLIENT_SECRET)+"&refresh_token="+str(in_refresh_token)+"&grant_type=refresh_token", ["Content-Length: 0"],true,HTTPClient.METHOD_POST)
+	is_token_ready = false
+
+
+func getAccesToken(in_json):
+	return in_json["access_token"]
+
+
+func _on_token_start_pressed():
+	if token_state == "no token" and !token_code.text.empty():
+		post_refresh_token(token_code.text)
+		token_state = "getting refresh token"
+	pass # Replace with function body.
+
+
+func token_work():
+	if token_state == "got refresh token":
+		refresh_token = getRefreshToken(saved_token_json)
+		post_acces_token(refresh_token)
+		token_state = "getting acces token"
+	if token_state == "got acces token":
+		auth_textbox.text = getAccesToken(saved_token_json)
+		_on_auth_token_text_changed()
+		token_state = "fresh acces token"
+	token_code_label.text = "CODE:" + token_state
+	pass
